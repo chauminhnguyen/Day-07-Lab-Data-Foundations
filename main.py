@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from src.agent import KnowledgeBaseAgent
+from src.chunking import FixedSizeChunker, RecursiveChunker, SentenceChunker
 from src.embeddings import (
     EMBEDDING_PROVIDER_ENV,
     LOCAL_EMBEDDING_MODEL,
@@ -19,12 +21,11 @@ from src.models import Document
 from src.store import EmbeddingStore
 
 SAMPLE_FILES = [
-    "data/python_intro.txt",
-    "data/vector_store_notes.md",
-    "data/rag_system_design.md",
-    "data/customer_support_playbook.txt",
-    "data/chunking_experiment_report.md",
-    "data/vi_retrieval_notes.md",
+    "data/alzheimer.md",
+    "data/benh-dai.md",
+    "data/benh_lao_phoi.md",
+    "data/benh-san-day.md",
+    "data/benh-tri.md",
 ]
 
 
@@ -62,7 +63,47 @@ def demo_llm(prompt: str) -> str:
     return f"[DEMO LLM] Generated answer from prompt preview: {preview}..."
 
 
-def run_manual_demo(question: str | None = None, sample_files: list[str] | None = None) -> int:
+def create_chunker(
+    chunker_name: str,
+    chunk_size: int = 500,
+    max_sentences_per_chunk: int = 3,
+):
+    """Build a chunker instance from a CLI option."""
+    chunker_name = chunker_name.lower()
+    if chunker_name == "fixed_size":
+        return FixedSizeChunker(chunk_size=chunk_size)
+    if chunker_name == "sentence":
+        return SentenceChunker(max_sentences_per_chunk=max_sentences_per_chunk)
+    if chunker_name == "recursive":
+        return RecursiveChunker(chunk_size=chunk_size)
+    raise ValueError(f"Unknown chunker: {chunker_name}")
+
+
+def chunk_documents(docs: list[Document], chunker) -> list[Document]:
+    """Split documents into smaller chunks before embedding."""
+    chunked_docs: list[Document] = []
+    for doc in docs:
+        chunks = chunker.chunk(doc.content)
+        for index, chunk in enumerate(chunks):
+            metadata = dict(doc.metadata)
+            metadata["chunk_index"] = index
+            chunked_docs.append(
+                Document(
+                    id=f"{doc.id}_{index}",
+                    content=chunk,
+                    metadata=metadata,
+                )
+            )
+    return chunked_docs
+
+
+def run_manual_demo(
+    question: str | None = None,
+    sample_files: list[str] | None = None,
+    chunker_name: str = "fixed_size",
+    chunk_size: int = 500,
+    sentences_per_chunk: int = 3,
+) -> int:
     files = sample_files or SAMPLE_FILES
     query = question or "Summarize the key information from the loaded files."
 
@@ -82,6 +123,16 @@ def run_manual_demo(question: str | None = None, sample_files: list[str] | None 
     print(f"\nLoaded {len(docs)} documents")
     for doc in docs:
         print(f"  - {doc.id}: {doc.metadata['source']}")
+
+    chunker = create_chunker(
+        chunker_name=chunker_name,
+        chunk_size=chunk_size,
+        max_sentences_per_chunk=sentences_per_chunk,
+    )
+    docs = chunk_documents(docs, chunker)
+    print(f"\nUsing chunker: {chunker_name}"
+          f" (chunk_size={chunk_size}, sentences_per_chunk={sentences_per_chunk})")
+    print(f"Chunked into {len(docs)} document chunks")
 
     load_dotenv(override=False)
     provider = os.getenv(EMBEDDING_PROVIDER_ENV, "mock").strip().lower()
@@ -120,8 +171,35 @@ def run_manual_demo(question: str | None = None, sample_files: list[str] | None 
 
 
 def main() -> int:
-    question = " ".join(sys.argv[1:]).strip() if len(sys.argv) > 1 else None
-    return run_manual_demo(question=question)
+    parser = argparse.ArgumentParser(description="Manual RAG demo with chunker options")
+    parser.add_argument(
+        "--chunker",
+        choices=["fixed_size", "sentence", "recursive"],
+        default="fixed_size",
+        help="Select the document chunking strategy to apply before embedding.",
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=500,
+        help="Maximum chunk size for fixed_size and recursive chunkers.",
+    )
+    parser.add_argument(
+        "--sentences-per-chunk",
+        type=int,
+        default=3,
+        help="Maximum sentences per chunk when using the sentence chunker.",
+    )
+    parser.add_argument("question", nargs="*", help="Optional question to ask the knowledge base.")
+    args = parser.parse_args()
+
+    question = " ".join(args.question).strip() if args.question else None
+    return run_manual_demo(
+        question=question,
+        chunker_name=args.chunker,
+        chunk_size=args.chunk_size,
+        sentences_per_chunk=args.sentences_per_chunk,
+    )
 
 
 if __name__ == "__main__":
