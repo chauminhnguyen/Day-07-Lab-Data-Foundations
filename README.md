@@ -59,29 +59,22 @@ PY
 - Package `src` hỗ trợ `all-MiniLM-L6-v2` qua `sentence-transformers`.
 - Lần chạy đầu tiên model sẽ được tải về và cache local.
 
-### 3) Tùy chọn: OpenAI embedder
+### 3) Tùy chọn: Gemini LLM
 
 ```bash
-pip install openai
-export OPENAI_API_KEY=your-key-here
-python3 - <<'PY'
-from src import OpenAIEmbedder
-embedder = OpenAIEmbedder()
-print(embedder._backend_name)
-print(len(embedder("embedding smoke test")))
-PY
+pip install google-generativeai
+export GEMINI_API_KEY=your-gemini-api-key-here
+python3 main.py "your question"
 ```
 
-- Model mặc định cho lựa chọn này là `text-embedding-3-small`
-- Có thể đổi model bằng:
-```bash
-export OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-```
+- Model mặc định: `gemini-1.5-flash`
+- Cần `GEMINI_API_KEY` trong environment hoặc `.env`
 
 ### Quy tắc fallback
 
-- Nếu không chọn gì, lab dùng `_mock_embed`
+- Nếu không chọn gì, lab dùng `_mock_embed` cho embeddings và mock LLM.
 - Nếu chọn `local` hoặc `openai` nhưng setup thiếu, code sẽ tự fallback về `_mock_embed`
+- Nếu `GEMINI_API_KEY` không set, demo_llm sẽ trả về error message.
 - Có thể cấu hình qua `.env` mà không cần `source .env`
 - Script `main.py` chạy end-to-end và import public API từ package `src`
 
@@ -100,21 +93,18 @@ print(embedder._backend_name, len(embedder("embedding smoke test")))
 PY
 ```
 
-**Verify OpenAI embedder**
+**Verify Gemini LLM**
 
 ```bash
 python3 - <<'PY'
-from pathlib import Path
 from dotenv import load_dotenv
-from src import OpenAIEmbedder
+from main import demo_llm
 
-load_dotenv(dotenv_path=Path(".env"), override=False)
-embedder = OpenAIEmbedder()
-print(embedder._backend_name, len(embedder("embedding smoke test")))
+load_dotenv()
+prompt = "Context: This is a test.\nQuestion: What is this?"
+print(demo_llm(prompt))
 PY
 ```
-
-> Lưu ý: `OpenAIEmbedder` cần `OPENAI_API_KEY` hợp lệ trong môi trường hoặc `.env`.
 
 ---
 

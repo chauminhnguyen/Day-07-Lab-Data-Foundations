@@ -1,0 +1,9 @@
+python main.py Bệnh Alzheimer là gì --chunker fixed_size
+python main.py Bệnh Alzheimer là gì --chunker sentence
+python main.py Bệnh Alzheimer là gì --chunker recursive
+
+fixed_size: Partial (overlap giúp nhưng không preserve semantic units)
+by_sentences: Yes (preserve sentence boundaries)
+recursive: Yes (preserve document structure qua separators)
+
+baseline_analysis.py

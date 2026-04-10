@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from .chunking import _dot
+from .chunking import _dot, compute_similarity
 from .embeddings import _mock_embed
 from .models import Document
 
@@ -50,10 +50,10 @@ class EmbeddingStore:
         query_emb = self._embedding_fn(query)
         similarities = []
         for record in records:
-            sim = _dot(query_emb, record["embedding"])
+            sim = compute_similarity(query_emb, record["embedding"])
             similarities.append((sim, record))
         similarities.sort(key=lambda x: x[0], reverse=True)
-        return [rec for _, rec in similarities[:top_k]]
+        return [{"id": rec["id"], "content": rec["content"], "metadata": rec["metadata"], "score": sim} for sim, rec in similarities[:top_k]]
 
     def add_documents(self, docs: list[Document]) -> None:
         """
@@ -121,7 +121,7 @@ class EmbeddingStore:
             query_emb = self._embedding_fn(query)
             results = self._collection.query(query_embeddings=[query_emb], n_results=top_k, where=metadata_filter)
             return [
-                {"id": id_, "content": doc, "metadata": meta, "distance": dist}
+                {"id": id_, "content": doc, "metadata": meta, "score": 1 - dist}  # Assuming distance is cosine distance
                 for id_, doc, meta, dist in zip(
                     results["ids"][0], results["documents"][0], results["metadatas"][0], results["distances"][0]
                 )

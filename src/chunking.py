@@ -97,6 +97,57 @@ class RecursiveChunker:
                 chunks.extend(sub_chunks)
         return chunks
 
+import re
+from typing import List
+
+
+class custom_SentenceChunker:
+    """
+    Split text into chunks of at most `max_sentences_per_chunk` sentences.
+
+    Improvements:
+    - Better sentence boundary detection (handles ., !, ?, newline)
+    - Avoid empty sentences
+    - Handle edge cases like abbreviations (basic level)
+    - Optional overlap between chunks for context preservation
+    """
+
+    def __init__(
+        self,
+        max_sentences_per_chunk: int = 3,
+        overlap: int = 0
+    ) -> None:
+        self.max_sentences_per_chunk = max(1, max_sentences_per_chunk)
+        self.overlap = max(0, overlap)
+
+        # Regex improved: handle ., !, ?, newline boundaries
+        self.sentence_splitter = re.compile(
+            r'(?<=[.!?])\s+|\n+'
+        )
+
+    def _split_sentences(self, text: str) -> List[str]:
+        sentences = self.sentence_splitter.split(text)
+        # Clean + remove empty
+        return [s.strip() for s in sentences if s.strip()]
+
+    def chunk(self, text: str) -> List[str]:
+        sentences = self._split_sentences(text)
+
+        if not sentences:
+            return []
+
+        chunks = []
+        i = 0
+
+        while i < len(sentences):
+            chunk_sentences = sentences[i:i + self.max_sentences_per_chunk]
+            chunks.append(" ".join(chunk_sentences))
+
+            # Move with overlap
+            step = self.max_sentences_per_chunk - self.overlap
+            i += max(1, step)
+
+        return chunks
 
 def _dot(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b))

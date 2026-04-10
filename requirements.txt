@@ -7,10 +7,13 @@ sentence-transformers
 #   pip install sentence-transformers
 # Install OpenAI embedder support with:
 #   pip install openai
+# Install Gemini embedder support with:
+#   pip install google-generativeai
 # Install both optional embedders with:
-#   pip install openai sentence-transformers
+#   pip install openai sentence-transformers google-generativeai
 # sentence-transformers>=3.0
 # openai>=1.0
+# google-generativeai>=0.8.0
 
 # Optional: for bonus tasks
 # chromadb>=0.4.0      # Real vector database integration

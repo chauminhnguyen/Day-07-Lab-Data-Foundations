@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+import google.generativeai as genai
 
 from src.agent import KnowledgeBaseAgent
 from src.chunking import FixedSizeChunker, RecursiveChunker, SentenceChunker
@@ -58,9 +60,19 @@ def load_documents_from_files(file_paths: list[str]) -> list[Document]:
 
 
 def demo_llm(prompt: str) -> str:
-    """A simple mock LLM for manual RAG testing."""
-    preview = prompt[:400].replace("\n", " ")
-    return f"[DEMO LLM] Generated answer from prompt preview: {preview}..."
+    """Call Gemini API for RAG testing."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return "[GEMINI ERROR] GEMINI_API_KEY not set in environment."
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")  # or another model
+
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"[GEMINI ERROR] {str(e)}"
 
 
 def create_chunker(
@@ -104,6 +116,7 @@ def run_manual_demo(
     chunk_size: int = 500,
     sentences_per_chunk: int = 3,
 ) -> int:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     files = sample_files or SAMPLE_FILES
     query = question or "Summarize the key information from the loaded files."
 
@@ -120,6 +133,8 @@ def run_manual_demo(
         print("  python3 main.py")
         return 1
 
+    logging.info(f"Loaded {len(docs)} documents from {len(files)} files.")
+
     print(f"\nLoaded {len(docs)} documents")
     for doc in docs:
         print(f"  - {doc.id}: {doc.metadata['source']}")
@@ -133,6 +148,14 @@ def run_manual_demo(
     print(f"\nUsing chunker: {chunker_name}"
           f" (chunk_size={chunk_size}, sentences_per_chunk={sentences_per_chunk})")
     print(f"Chunked into {len(docs)} document chunks")
+
+    # Chunk Coherence Analysis
+    chunk_lengths = [len(doc.content) for doc in docs]
+    avg_chunk_length = sum(chunk_lengths) / len(chunk_lengths) if chunk_lengths else 0
+    print(f"Chunk Coherence: Avg chunk length = {avg_chunk_length:.1f} chars")
+    print(f"  Total chunks: {len(docs)}, Min length: {min(chunk_lengths)}, Max length: {max(chunk_lengths)}")
+
+    logging.info(f"Chunked documents using {chunker_name}: {len(docs)} chunks, avg length {avg_chunk_length:.1f} chars")
 
     load_dotenv(override=False)
     provider = os.getenv(EMBEDDING_PROVIDER_ENV, "mock").strip().lower()
@@ -155,6 +178,8 @@ def run_manual_demo(
     store.add_documents(docs)
 
     print(f"\nStored {store.get_collection_size()} documents in EmbeddingStore")
+
+    logging.info(f"Stored {store.get_collection_size()} documents in EmbeddingStore.")
     print("\n=== EmbeddingStore Search Test ===")
     print(f"Query: {query}")
     search_results = store.search(query, top_k=3)
@@ -162,12 +187,55 @@ def run_manual_demo(
         print(f"{index}. score={result['score']:.3f} source={result['metadata'].get('source')}")
         print(f"   content preview: {result['content'][:120].replace(chr(10), ' ')}...")
 
+    # Retrieval Precision Analysis
+    scores = [result['score'] for result in search_results]
+    avg_score = 0.0
+    if scores:
+        avg_score = sum(scores) / len(scores)
+        score_range = max(scores) - min(scores)
+        print(f"Retrieval Precision: Avg score = {avg_score:.3f}, Score range = {score_range:.3f}")
+        print(f"  Score distribution: {', '.join(f'{s:.3f}' for s in scores)}")
+        # Note: Top-k relevance would require manual judgment, so we print scores for analysis
+    else:
+        print("Retrieval Precision: No results found")
+
+    logging.info(f"Search query '{query}': retrieved {len(search_results)} results, avg score {avg_score:.3f}")
+
+    # Metadata Utility Analysis: Compare search vs search_with_filter
+    print("\n=== Metadata Utility Test ===")
+    filter_metadata = {"extension": ".md"}  # Example filter
+    filtered_results = store.search_with_filter(query, top_k=3, metadata_filter=filter_metadata)
+    print(f"Filtered search (extension='.md'): {len(filtered_results)} results")
+    for index, result in enumerate(filtered_results, start=1):
+        print(f"{index}. score={result['score']:.3f} source={result['metadata'].get('source')}")
+        print(f"   content preview: {result['content']}")
+
+    if filtered_results:
+        filtered_scores = [r['score'] for r in filtered_results]
+        filtered_avg = sum(filtered_scores) / len(filtered_scores)
+        print(f"Filtered avg score: {filtered_avg:.3f} (vs unfiltered {avg_score:.3f})")
+    else:
+        print("No filtered results found")
+        filtered_avg = 0.0
+
+    avg_score_filtered = filtered_avg if filtered_results else 0.0
+    logging.info(f"Filtered search (extension='.md'): {len(filtered_results)} results, avg score {avg_score_filtered:.3f}")
+
     print("\n=== KnowledgeBaseAgent Test ===")
     agent = KnowledgeBaseAgent(store=store, llm_fn=demo_llm)
     print(f"Question: {query}")
     print("Agent answer:")
-    print(agent.answer(query, top_k=3))
-    return 0
+    answer = agent.answer(query, top_k=3)
+    print(answer)
+
+    # Grounding Quality Analysis: Source Traceability
+    print("\nGrounding Quality: Sources used for answer:")
+    agent_results = store.search(query, top_k=3)  # Same as agent uses
+    for index, result in enumerate(agent_results, start=1):
+        print(f"{index}. Source: {result['metadata'].get('source')}, Chunk index: {result['metadata'].get('chunk_index')}")
+        print(f"   Content snippet: {result['content'][:100].replace(chr(10), ' ')}...")
+
+    logging.info(f"Agent answered query '{query}' using {len(agent_results)} sources.")
 
 
 def main() -> int:
